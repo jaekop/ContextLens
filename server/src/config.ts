@@ -17,6 +17,7 @@ const envSchema = z.object({
   ANALYTICS_DEFAULT: z.enum(['mock', 'snowflake']).default('mock'),
   SUMMARY_INTERVAL_MS: z.coerce.number().default(1500),
   SUMMARY_CHARS: z.coerce.number().default(500),
+  VISION_INTERVAL_MS: z.coerce.number().default(2000),
   MAX_ROLLING_CHARS: z.coerce.number().default(2000),
   MAX_DEBRIEF_CHARS: z.coerce.number().default(8000),
   ANALYTICS_PATH: z.string().default('./analytics/out.jsonl')
@@ -49,6 +50,7 @@ export const config = {
   analyticsDefault: env.ANALYTICS_DEFAULT,
   summaryIntervalMs: env.SUMMARY_INTERVAL_MS,
   summaryChars: env.SUMMARY_CHARS,
+  visionIntervalMs: env.VISION_INTERVAL_MS,
   maxRollingChars: env.MAX_ROLLING_CHARS,
   maxDebriefChars: env.MAX_DEBRIEF_CHARS,
   analyticsPath: env.ANALYTICS_PATH

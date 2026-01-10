@@ -38,6 +38,7 @@ Client → Server:
 - `start_session`: `{type:"start_session", sessionId?, userId?, language?, saveMode:"none"|"mongo", sttMode:"mock"|"deepgram"}`
 - `audio_chunk`: `{type:"audio_chunk", sessionId, pcm16_base64, sampleRate, t_ms}`
 - `transcript_chunk`: `{type:"transcript_chunk", sessionId, text, t0_ms?, t1_ms?, speaker?}`
+- `vision_frame`: `{type:"vision_frame", sessionId, image_base64, mime:"image/jpeg"|"image/png", t_ms}`
 - `end_session`: `{type:"end_session", sessionId}`
 
 Server → Client:
@@ -45,6 +46,7 @@ Server → Client:
 - `debrief`: `{type:"debrief", sessionId, bullets, suggestions, uncertainty_notes}`
 - `error`: `{type:"error", sessionId?, code, message}`
 - `tool_event`: `{type:"tool_event", sessionId, tool:"practice_prompt", suggestion, last_updated_ms}`
+- `vision_update`: `{type:"vision_update", sessionId, scene_summary, confidence, uncertainty_notes, last_updated_ms}`
 
 HTTP:
 - `GET /health` → `{ ok: true }`
@@ -54,6 +56,19 @@ HTTP:
 ## Deepgram (Mock vs Real)
 - Mock mode: `STT_DEFAULT=mock` and send `transcript_chunk` messages.
 - Real mode: set `STT_DEFAULT=deepgram`, provide `DEEPGRAM_API_KEY`, then send `audio_chunk` frames (pcm16 base64). The server starts a Deepgram streaming connection per session.
+
+## Audio Test (Deepgram)
+Stream raw PCM16 (16kHz mono) into the audio pipe stub:
+```bash
+ffmpeg -i sample.wav -f s16le -ac 1 -ar 16000 - | node --loader tsx ../client_stub/audio_pipe.ts ws://localhost:8080/ws
+```
+
+## Vision Test (Camera Frames)
+Send a JPEG/PNG frame to the backend:
+```bash
+node --loader tsx ../client_stub/vision_sender.ts ws://localhost:8080/ws demo-session ./sample.jpg
+```
+Or use `http://localhost:8080/ws-test` and select an image file.
 
 ## Gemini (Rolling Summary + Debrief)
 Set `GEMINI_API_KEY` and `GEMINI_MODEL` (default `gemini-1.5-pro`). If the key is missing, the server uses heuristic summaries.

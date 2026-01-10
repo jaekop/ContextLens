@@ -20,6 +20,12 @@ export type DebriefSummary = {
   uncertainty_notes: string[];
 };
 
+export type VisionSummary = {
+  scene_summary: string;
+  confidence: number;
+  uncertainty_notes: string[];
+};
+
 const RollingSchema = z.object({
   topic_line: z.string().min(1),
   intent_tags: z.array(z.enum(IntentTags)).min(1).max(3),
@@ -31,6 +37,12 @@ const DebriefSchema = z.object({
   bullets: z.array(z.string().min(1)).min(3).max(5),
   suggestions: z.array(z.string().min(1)).min(1).max(2),
   uncertainty_notes: z.array(z.string().min(1)).min(1).max(2)
+});
+
+const VisionSchema = z.object({
+  scene_summary: z.string().min(1),
+  confidence: z.number().min(0).max(1),
+  uncertainty_notes: z.array(z.string().min(1)).max(2)
 });
 
 export class GeminiAdapter {
@@ -108,6 +120,35 @@ export class GeminiAdapter {
       return heuristicDebrief(transcript);
     }
   }
+
+  async visionSummary(
+    imageBase64: string,
+    mimeType: 'image/jpeg' | 'image/png',
+    language?: string
+  ): Promise<VisionSummary> {
+    if (!this.client) {
+      return heuristicVision();
+    }
+
+    const prompt = buildVisionPrompt(language);
+
+    try {
+      const model = this.client.getGenerativeModel({
+        model: this.modelName,
+        generationConfig: { responseMimeType: 'application/json' }
+      });
+      const result = await model.generateContent([
+        { text: prompt },
+        { inlineData: { data: imageBase64, mimeType } }
+      ]);
+      const text = result.response.text();
+      const parsed = parseJson(text, VisionSchema);
+      return parsed ?? heuristicVision();
+    } catch (error) {
+      console.warn('Gemini vision summary failed', error);
+      return heuristicVision();
+    }
+  }
 }
 
 function buildRollingPrompt(transcript: string, language?: string): string {
@@ -141,6 +182,20 @@ function buildDebriefPrompt(transcript: string, language?: string): string {
     'Transcript:',
     transcript
   ].join('\n');
+}
+
+function buildVisionPrompt(language?: string): string {
+  return [
+    'You are Context Lens. Return STRICT JSON only. No markdown or code fences.',
+    'Output schema:',
+    '{\"scene_summary\":\"short neutral description\",\"confidence\":0.0,\"uncertainty_notes\":[\"...\"]}',
+    'Rules:',
+    '- Do not identify people or speculate on identities.',
+    '- No medical claims, no diagnosis.',
+    '- Do not assert emotions as facts; use tentative language if needed.',
+    '- uncertainty_notes can be 0-2 short notes.',
+    `Language hint: ${language ?? 'unknown'}.`
+  ].join('\\n');
 }
 
 function parseJson<T>(text: string, schema: z.ZodSchema<T>): T | null {
@@ -205,6 +260,14 @@ function heuristicDebrief(transcript: string): DebriefSummary {
     ],
     suggestions: ['Consider confirming next steps and clarifying open questions.'],
     uncertainty_notes: ['Summary may be incomplete due to limited context.']
+  };
+}
+
+function heuristicVision(): VisionSummary {
+  return {
+    scene_summary: 'Visual frame received.',
+    confidence: 0.2,
+    uncertainty_notes: ['Visual context is limited.']
   };
 }
 

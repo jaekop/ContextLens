@@ -1,6 +1,13 @@
 import { WebSocketServer, WebSocket } from 'ws';
 import type { Server as HttpServer } from 'http';
-import { ClientMessageSchema, ToolEvent, OverlayUpdate, Debrief, ErrorMessage } from './schemas.js';
+import {
+  ClientMessageSchema,
+  ToolEvent,
+  OverlayUpdate,
+  Debrief,
+  ErrorMessage,
+  VisionUpdate
+} from './schemas.js';
 import { SessionStore } from '../sessions/store.js';
 import { SessionProcessor } from '../pipeline/processor.js';
 import { DeepgramAdapter } from '../adapters/deepgram.js';
@@ -11,6 +18,7 @@ export type WsHub = {
   emitDebrief: (message: Debrief) => void;
   emitError: (message: ErrorMessage) => void;
   emitTool: (message: ToolEvent) => void;
+  emitVision: (message: VisionUpdate) => void;
 };
 
 export function createWsHub(params: {
@@ -24,13 +32,19 @@ export function createWsHub(params: {
   const sessionClients = new Map<string, Set<WebSocket>>();
   const clientSessions = new Map<WebSocket, Set<string>>();
 
-  const send = (ws: WebSocket, message: OverlayUpdate | Debrief | ErrorMessage | ToolEvent) => {
+  const send = (
+    ws: WebSocket,
+    message: OverlayUpdate | Debrief | ErrorMessage | ToolEvent | VisionUpdate
+  ) => {
     if (ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify(message));
     }
   };
 
-  const sendToSession = (sessionId: string, message: OverlayUpdate | Debrief | ErrorMessage | ToolEvent) => {
+  const sendToSession = (
+    sessionId: string,
+    message: OverlayUpdate | Debrief | ErrorMessage | ToolEvent | VisionUpdate
+  ) => {
     const clients = sessionClients.get(sessionId);
     if (!clients) return;
     for (const ws of clients) {
@@ -173,6 +187,10 @@ export function createWsHub(params: {
           await params.processor.handleTranscript(message.sessionId, message);
           break;
         }
+        case 'vision_frame': {
+          await params.processor.handleVisionFrame(message.sessionId, message);
+          break;
+        }
         case 'end_session': {
           await params.processor.endSession(message.sessionId);
           break;
@@ -204,6 +222,7 @@ export function createWsHub(params: {
         }
       }
     },
-    emitTool: (message) => sendToSession(message.sessionId, message)
+    emitTool: (message) => sendToSession(message.sessionId, message),
+    emitVision: (message) => sendToSession(message.sessionId, message)
   };
 }

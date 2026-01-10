@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import type { TranscriptChunk, OverlayUpdate } from '../ws/schemas.js';
+import type { TranscriptChunk, OverlayUpdate, VisionUpdate } from '../ws/schemas.js';
 import type { Debrief } from '../ws/schemas.js';
 import type { SttStreamHandle } from '../adapters/deepgram.js';
 
@@ -12,10 +12,12 @@ export type SessionState = {
   buffer: string;
   chunks: TranscriptChunk[];
   overlays: OverlayUpdate[];
+  visionUpdates: VisionUpdate[];
   debrief?: Debrief;
   createdAt: number;
   lastSummaryAt: number;
   lastSummaryChars: number;
+  lastVisionAt: number;
   stream?: SttStreamHandle;
   overlayLatenciesMs: number[];
 };
@@ -50,9 +52,11 @@ export class SessionStore {
       buffer: '',
       chunks: [],
       overlays: [],
+      visionUpdates: [],
       createdAt: Date.now(),
       lastSummaryAt: 0,
       lastSummaryChars: 0,
+      lastVisionAt: 0,
       overlayLatenciesMs: []
     };
 

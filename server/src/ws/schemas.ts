@@ -40,6 +40,14 @@ export const TranscriptChunkSchema = z.object({
   speaker: z.string().min(1).optional()
 });
 
+export const VisionFrameSchema = z.object({
+  type: z.literal('vision_frame'),
+  sessionId: z.string().min(1),
+  image_base64: z.string().min(1),
+  mime: z.enum(['image/jpeg', 'image/png']),
+  t_ms: z.number().nonnegative()
+});
+
 export const EndSessionSchema = z.object({
   type: z.literal('end_session'),
   sessionId: z.string().min(1)
@@ -49,6 +57,7 @@ export const ClientMessageSchema = z.discriminatedUnion('type', [
   StartSessionSchema,
   AudioChunkSchema,
   TranscriptChunkSchema,
+  VisionFrameSchema,
   EndSessionSchema
 ]);
 
@@ -73,6 +82,15 @@ export const DebriefSchema = z.object({
   uncertainty_notes: z.array(z.string().min(1)).min(1).max(2)
 });
 
+export const VisionUpdateSchema = z.object({
+  type: z.literal('vision_update'),
+  sessionId: z.string().min(1),
+  scene_summary: z.string().min(1),
+  confidence: z.number().min(0).max(1),
+  uncertainty_notes: z.array(z.string().min(1)).max(2),
+  last_updated_ms: z.number().nonnegative()
+});
+
 export const ErrorSchema = z.object({
   type: z.literal('error'),
   sessionId: z.string().min(1).optional(),
@@ -92,5 +110,7 @@ export type OverlayUpdate = z.infer<typeof OverlayUpdateSchema>;
 export type Debrief = z.infer<typeof DebriefSchema>;
 export type ErrorMessage = z.infer<typeof ErrorSchema>;
 export type ToolEvent = z.infer<typeof ToolEventSchema>;
+export type VisionFrame = z.infer<typeof VisionFrameSchema>;
+export type VisionUpdate = z.infer<typeof VisionUpdateSchema>;
 
-export type ServerMessage = OverlayUpdate | Debrief | ErrorMessage | ToolEvent;
+export type ServerMessage = OverlayUpdate | Debrief | ErrorMessage | ToolEvent | VisionUpdate;

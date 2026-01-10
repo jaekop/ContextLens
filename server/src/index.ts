@@ -145,7 +145,8 @@ async function boot() {
       overlay: () => {},
       debrief: () => {},
       error: (message) => fastify.log.warn({ message }, 'processor error'),
-      tool: () => {}
+      tool: () => {},
+      vision: () => {}
     }
   });
 
@@ -161,7 +162,8 @@ async function boot() {
     overlay: hub.emitOverlay,
     debrief: hub.emitDebrief,
     error: hub.emitError,
-    tool: hub.emitTool
+    tool: hub.emitTool,
+    vision: hub.emitVision
   });
 
   await fastify.listen({ port: config.port, host: '0.0.0.0' });
@@ -196,7 +198,11 @@ function buildWsTestPage(wsPath: string): string {
   <div class="row">
     <button id="send">Send JSON</button>
     <button id="sampleChunk">Send transcript_chunk</button>
+    <button id="sendVision">Send vision_frame</button>
     <button id="endSession">Send end_session</button>
+  </div>
+  <div class="row">
+    <input id="visionFile" type="file" accept="image/png,image/jpeg" />
   </div>
   <pre id="log"></pre>
   <script>
@@ -236,6 +242,28 @@ function buildWsTestPage(wsPath: string): string {
         speaker: 'user'
       };
       ws.send(JSON.stringify(message));
+    };
+    document.getElementById('sendVision').onclick = async () => {
+      if (!ws || ws.readyState !== 1) return log('not connected');
+      const fileInput = document.getElementById('visionFile');
+      const file = fileInput.files && fileInput.files[0];
+      if (!file) return log('select an image first');
+      const sessionId = sessionInput.value || 'demo-session';
+      const arrayBuffer = await file.arrayBuffer();
+      const bytes = new Uint8Array(arrayBuffer);
+      let binary = '';
+      for (let i = 0; i < bytes.length; i++) {
+        binary += String.fromCharCode(bytes[i]);
+      }
+      const image_base64 = btoa(binary);
+      const mime = file.type || 'image/jpeg';
+      ws.send(JSON.stringify({
+        type: 'vision_frame',
+        sessionId,
+        image_base64,
+        mime,
+        t_ms: Date.now()
+      }));
     };
     document.getElementById('endSession').onclick = () => {
       if (!ws || ws.readyState !== 1) return log('not connected');

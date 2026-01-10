@@ -2,7 +2,14 @@ import crypto from 'crypto';
 import { config } from '../config.js';
 import { GeminiAdapter } from '../adapters/gemini.js';
 import { SessionStore, SessionState } from '../sessions/store.js';
-import type { TranscriptChunk, OverlayUpdate, Debrief, ToolEvent } from '../ws/schemas.js';
+import type {
+  TranscriptChunk,
+  OverlayUpdate,
+  Debrief,
+  ToolEvent,
+  VisionFrame,
+  VisionUpdate
+} from '../ws/schemas.js';
 import type { MongoStore } from '../db/mongo.js';
 import { SnowflakeAdapter, MetricsEvent } from '../analytics/snowflake.js';
 
@@ -11,6 +18,7 @@ export type ProcessorEmitters = {
   debrief: (message: Debrief) => void;
   error: (message: { type: 'error'; sessionId?: string; code: string; message: string }) => void;
   tool: (message: ToolEvent) => void;
+  vision: (message: VisionUpdate) => void;
 };
 
 export class SessionProcessor {
@@ -112,6 +120,38 @@ export class SessionProcessor {
     }
   }
 
+  async handleVisionFrame(sessionId: string, frame: VisionFrame) {
+    const session = this.store.get(sessionId);
+    if (!session) {
+      this.emitters.error({
+        type: 'error',
+        sessionId,
+        code: 'session_not_found',
+        message: 'Session not found. Send start_session first.'
+      });
+      return;
+    }
+
+    const now = Date.now();
+    if (now - session.lastVisionAt < config.visionIntervalMs) {
+      return;
+    }
+    session.lastVisionAt = now;
+
+    const summary = await this.gemini.visionSummary(frame.image_base64, frame.mime, session.language);
+    const update: VisionUpdate = {
+      type: 'vision_update',
+      sessionId,
+      scene_summary: summary.scene_summary,
+      confidence: clamp(summary.confidence, 0, 1),
+      uncertainty_notes: summary.uncertainty_notes,
+      last_updated_ms: now
+    };
+
+    session.visionUpdates.push(update);
+    this.emitters.vision(update);
+  }
+
   async endSession(sessionId: string) {
     const session = this.store.get(sessionId);
     if (!session) {
@@ -164,6 +204,7 @@ export class SessionProcessor {
         saveMode: session.saveMode,
         transcript: session.chunks,
         overlays: session.overlays,
+        vision: session.visionUpdates,
         debrief: session.debrief ?? {},
         createdAt: new Date(session.createdAt),
         updatedAt: new Date()

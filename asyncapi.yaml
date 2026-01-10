@@ -15,6 +15,7 @@ channels:
           - $ref: '#/components/messages/StartSession'
           - $ref: '#/components/messages/AudioChunk'
           - $ref: '#/components/messages/TranscriptChunk'
+          - $ref: '#/components/messages/VisionFrame'
           - $ref: '#/components/messages/EndSession'
     subscribe:
       message:
@@ -23,6 +24,7 @@ channels:
           - $ref: '#/components/messages/Debrief'
           - $ref: '#/components/messages/Error'
           - $ref: '#/components/messages/ToolEvent'
+          - $ref: '#/components/messages/VisionUpdate'
 components:
   messages:
     StartSession:
@@ -60,6 +62,17 @@ components:
           t0_ms: { type: number }
           t1_ms: { type: number }
           speaker: { type: string }
+    VisionFrame:
+      name: vision_frame
+      payload:
+        type: object
+        required: [type, sessionId, image_base64, mime, t_ms]
+        properties:
+          type: { const: vision_frame }
+          sessionId: { type: string }
+          image_base64: { type: string }
+          mime: { type: string, enum: [image/jpeg, image/png] }
+          t_ms: { type: number }
     EndSession:
       name: end_session
       payload:
@@ -104,6 +117,20 @@ components:
           uncertainty_notes:
             type: array
             items: { type: string }
+    VisionUpdate:
+      name: vision_update
+      payload:
+        type: object
+        required: [type, sessionId, scene_summary, confidence, uncertainty_notes, last_updated_ms]
+        properties:
+          type: { const: vision_update }
+          sessionId: { type: string }
+          scene_summary: { type: string }
+          confidence: { type: number }
+          uncertainty_notes:
+            type: array
+            items: { type: string }
+          last_updated_ms: { type: number }
     Error:
       name: error
       payload:

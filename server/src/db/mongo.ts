@@ -14,6 +14,7 @@ export type SessionRecord = {
   saveMode: 'none' | 'mongo';
   transcript: unknown[];
   overlays: unknown[];
+  vision?: unknown[];
   debrief: unknown;
   createdAt: Date;
   updatedAt: Date;
