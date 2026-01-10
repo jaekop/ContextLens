@@ -1,0 +1,8 @@
+node_modules
+server/node_modules
+server/dist
+.env
+.env.*
+analytics_out
+server/analytics_out
+*.log
