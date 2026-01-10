@@ -1,38 +1,71 @@
 import 'dotenv/config';
-import http from 'http';
+import Fastify from 'fastify';
 import { config } from './config.js';
-import { createWsHub } from './ws/hub.js';
-import { GeminiClient } from './pipeline/llm_gemini.js';
+import { SessionStore } from './sessions/store.js';
+import { GeminiAdapter } from './adapters/gemini.js';
+import { DeepgramAdapter } from './adapters/deepgram.js';
 import { SessionProcessor } from './pipeline/processor.js';
-import { connectMongo } from './db/mongo.js';
+import { createWsHub } from './ws/hub.js';
+import { MongoStore } from './db/mongo.js';
+import { SnowflakeAdapter } from './analytics/snowflake.js';
 
 async function boot() {
-  try {
-    await connectMongo();
-  } catch (error) {
-    console.warn('MongoDB connection failed; saveMode=mongo will be unavailable.', error);
-  }
+  const fastify = Fastify({ logger: true });
 
-  const server = http.createServer((_, res) => {
-    res.writeHead(200, { 'Content-Type': 'text/plain' });
-    res.end('Context Lens server running');
+  fastify.get('/health', async () => ({ ok: true }));
+
+  const mongo = await MongoStore.connect(config.mongoUri).catch((error) => {
+    fastify.log.warn({ error }, 'Mongo connection failed');
+    return null;
   });
 
-  const hub = createWsHub(server, config.wsPath);
-  const gemini = new GeminiClient({
+  const store = new SessionStore();
+  const gemini = new GeminiAdapter({
     apiKey: config.geminiApiKey,
     model: config.geminiModel
   });
-  const processor = new SessionProcessor(gemini, {
-    emitOverlay: hub.emitOverlay,
-    emitDebrief: hub.emitDebrief,
-    emitError: hub.emitError
+  const deepgram = new DeepgramAdapter(config.deepgramApiKey);
+  const snowflake = new SnowflakeAdapter({
+    account: config.snowflake.account,
+    user: config.snowflake.user,
+    password: config.snowflake.password,
+    database: config.snowflake.database,
+    schema: config.snowflake.schema,
+    warehouse: config.snowflake.warehouse,
+    mockOutputPath: config.analyticsPath,
+    mode: config.analyticsDefault
   });
-  hub.attachProcessor(processor);
 
-  server.listen(config.port, () => {
-    console.log(`HTTP server listening on :${config.port}`);
+  const processor = new SessionProcessor({
+    store,
+    gemini,
+    mongo,
+    snowflake,
+    emitters: {
+      overlay: () => {},
+      debrief: () => {},
+      error: (message) => fastify.log.warn({ message }, 'processor error'),
+      tool: () => {}
+    }
   });
+
+  const hub = createWsHub({
+    server: fastify.server,
+    path: config.wsPath,
+    store,
+    processor,
+    deepgram
+  });
+
+  processor.setEmitters({
+    overlay: hub.emitOverlay,
+    debrief: hub.emitDebrief,
+    error: hub.emitError,
+    tool: hub.emitTool
+  });
+
+  await fastify.listen({ port: config.port, host: '0.0.0.0' });
+  fastify.log.info(`Server listening on :${config.port}`);
 }
 
 boot().catch((error) => {

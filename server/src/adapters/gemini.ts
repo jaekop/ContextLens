@@ -1,6 +1,6 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { z } from 'zod';
-import { IntentTags, IntentTag } from '../ws/types.js';
+import { IntentTags, IntentTag } from '../ws/schemas.js';
 
 type GeminiConfig = {
   apiKey: string;
@@ -33,7 +33,7 @@ const DebriefSchema = z.object({
   uncertainty_notes: z.array(z.string().min(1)).min(1).max(2)
 });
 
-export class GeminiClient {
+export class GeminiAdapter {
   private readonly client?: GoogleGenerativeAI;
   private readonly modelName: string;
 
@@ -44,12 +44,13 @@ export class GeminiClient {
     }
   }
 
-  async generateRollingSummary(transcript: string, language?: string): Promise<RollingSummary> {
+  async rollingSummary(transcript: string, language?: string): Promise<RollingSummary> {
     if (!this.client) {
-      return heuristicRollingSummary(transcript);
+      return heuristicRolling(transcript);
     }
 
     const prompt = buildRollingPrompt(transcript, language);
+
     try {
       const model = this.client.getGenerativeModel({
         model: this.modelName,
@@ -57,20 +58,21 @@ export class GeminiClient {
       });
       const result = await model.generateContent(prompt);
       const text = result.response.text();
-      const parsed = parseJsonFromText(text, RollingSchema);
-      return normalizeRolling(parsed ?? heuristicRollingSummary(transcript));
+      const parsed = parseJson(text, RollingSchema);
+      return normalizeRolling(parsed ?? heuristicRolling(transcript));
     } catch (error) {
-      console.warn('Gemini rolling summary failed, using heuristic', error);
-      return heuristicRollingSummary(transcript);
+      console.warn('Gemini rolling summary failed', error);
+      return heuristicRolling(transcript);
     }
   }
 
-  async generateDebrief(transcript: string, language?: string): Promise<DebriefSummary> {
+  async debrief(transcript: string, language?: string): Promise<DebriefSummary> {
     if (!this.client) {
-      return heuristicDebriefSummary(transcript);
+      return heuristicDebrief(transcript);
     }
 
     const prompt = buildDebriefPrompt(transcript, language);
+
     try {
       const model = this.client.getGenerativeModel({
         model: this.modelName,
@@ -78,97 +80,91 @@ export class GeminiClient {
       });
       const result = await model.generateContent(prompt);
       const text = result.response.text();
-      const parsed = parseJsonFromText(text, DebriefSchema);
-      return parsed ?? heuristicDebriefSummary(transcript);
+      const parsed = parseJson(text, DebriefSchema);
+      return parsed ?? heuristicDebrief(transcript);
     } catch (error) {
-      console.warn('Gemini debrief failed, using heuristic', error);
-      return heuristicDebriefSummary(transcript);
+      console.warn('Gemini debrief failed', error);
+      return heuristicDebrief(transcript);
     }
   }
 }
 
 function buildRollingPrompt(transcript: string, language?: string): string {
   return [
-    'You are Context Lens. Return STRICT JSON only. No markdown, no code fences.',
-    'Follow this schema:',
+    'You are Context Lens. Return STRICT JSON only. No markdown or code fences.',
+    'Output schema:',
     '{"topic_line":"<= 12 words","intent_tags":["planning"],"confidence":0.0,"uncertainty_notes":["..."]}',
     'Rules:',
     '- intent_tags must be 1-3 tags from: ' + JSON.stringify(IntentTags),
-    '- Use possible/uncertain language, never state emotions as facts.',
-    '- No medical claims, no diagnosis.',
+    '- No diagnosis, no medical claims.',
+    '- Do not assert emotions as facts; use tentative language if needed.',
     '- uncertainty_notes can be 0-2 short notes.',
     `Language hint: ${language ?? 'unknown'}.`,
-    'Transcript (most recent window):',
+    'Transcript (recent window):',
     transcript
   ].join('\n');
 }
 
 function buildDebriefPrompt(transcript: string, language?: string): string {
   return [
-    'You are Context Lens. Return STRICT JSON only. No markdown, no code fences.',
-    'Follow this schema:',
+    'You are Context Lens. Return STRICT JSON only. No markdown or code fences.',
+    'Output schema:',
     '{"bullets":["..."],"suggestions":["..."],"uncertainty_notes":["..."]}',
     'Rules:',
-    '- bullets: 3-5 short items.',
-    '- suggestions: 1-2 communication practice suggestions.',
+    '- bullets: 3-5 short bullets.',
+    '- suggestions: 1-2 educational practice suggestions.',
     '- uncertainty_notes: 1-2 short notes.',
-    '- Use possible/uncertain language, never state emotions as facts.',
-    '- No medical claims, no diagnosis.',
+    '- No diagnosis, no medical claims.',
+    '- Do not assert emotions as facts; use tentative language if needed.',
     `Language hint: ${language ?? 'unknown'}.`,
     'Transcript:',
     transcript
   ].join('\n');
 }
 
-function parseJsonFromText<T>(text: string, schema: z.ZodSchema<T>): T | null {
+function parseJson<T>(text: string, schema: z.ZodSchema<T>): T | null {
   const extracted = extractJson(text);
-  if (!extracted) {
-    return null;
-  }
+  if (!extracted) return null;
   try {
-    const parsed = JSON.parse(extracted);
-    return schema.parse(parsed);
+    return schema.parse(JSON.parse(extracted));
   } catch {
     return null;
   }
 }
 
 function extractJson(text: string): string | null {
-  const first = text.indexOf('{');
-  const last = text.lastIndexOf('}');
-  if (first === -1 || last === -1 || last <= first) {
+  const start = text.indexOf('{');
+  const end = text.lastIndexOf('}');
+  if (start === -1 || end === -1 || end <= start) {
     return null;
   }
-  return text.slice(first, last + 1);
+  return text.slice(start, end + 1);
 }
 
 function normalizeRolling(summary: RollingSummary): RollingSummary {
-  const words = summary.topic_line.split(/\s+/).slice(0, 12);
   return {
     ...summary,
-    topic_line: words.join(' '),
+    topic_line: summary.topic_line.split(/\s+/).slice(0, 12).join(' '),
     intent_tags: summary.intent_tags.slice(0, 3)
   };
 }
 
-function heuristicRollingSummary(transcript: string): RollingSummary {
+function heuristicRolling(transcript: string): RollingSummary {
   const lower = transcript.toLowerCase();
   const tags: IntentTag[] = [];
-
-  if (/(plan|schedule|timeline|next step)/.test(lower)) tags.push('planning');
-  if (/(feedback|review|thoughts|opinion)/.test(lower)) tags.push('feedback');
-  if (/(argue|debate|disagree)/.test(lower)) tags.push('debate');
-  if (/(joke|haha|lol)/.test(lower)) tags.push('joking');
+  if (/(plan|schedule|next step)/.test(lower)) tags.push('planning');
+  if (/(feedback|review|opinion)/.test(lower)) tags.push('feedback');
+  if (/(debate|disagree|argue)/.test(lower)) tags.push('debate');
+  if (/(joke|lol|haha)/.test(lower)) tags.push('joking');
   if (/(vent|frustrated|upset)/.test(lower)) tags.push('venting');
   if (/(support|help|assist)/.test(lower)) tags.push('support');
-  if (/(negotiate|trade|deal)/.test(lower)) tags.push('negotiation');
+  if (/(negotiate|deal|trade)/.test(lower)) tags.push('negotiation');
   if (/(how to|instruction|teach)/.test(lower)) tags.push('instruction');
-
   if (tags.length === 0) tags.push('smalltalk');
 
   const topic_line = buildTopicLine(transcript);
   const confidence = Math.min(1, 0.3 + transcript.length / 1200);
-  const uncertainty_notes = transcript.length < 200 ? ['Limited context available.'] : [];
+  const uncertainty_notes = transcript.length < 200 ? ['Limited context.'] : [];
 
   return {
     topic_line,
@@ -178,21 +174,20 @@ function heuristicRollingSummary(transcript: string): RollingSummary {
   };
 }
 
-function heuristicDebriefSummary(transcript: string): DebriefSummary {
-  const topic_line = buildTopicLine(transcript);
+function heuristicDebrief(transcript: string): DebriefSummary {
+  const topic = buildTopicLine(transcript);
   return {
     bullets: [
-      `Main topic: ${topic_line}`,
-      'Key points were shared across multiple turns.',
+      `Main topic: ${topic}`,
+      'Several points were shared across the conversation.',
       'Intent signals appeared throughout the exchange.'
     ],
-    suggestions: ['Confirm next steps and ask for clarifications.'],
-    uncertainty_notes: ['Summary may miss details due to limited context.']
+    suggestions: ['Consider confirming next steps and clarifying open questions.'],
+    uncertainty_notes: ['Summary may be incomplete due to limited context.']
   };
 }
 
 function buildTopicLine(transcript: string): string {
-  const sentence = transcript.split(/[.!?\n]/).find((line) => line.trim().length > 0);
-  const words = (sentence ?? 'Conversation in progress').trim().split(/\s+/).slice(0, 12);
-  return words.join(' ');
+  const line = transcript.split(/[.!?\n]/).find((item) => item.trim().length > 0);
+  return (line ?? 'Conversation in progress').trim().split(/\s+/).slice(0, 12).join(' ');
 }

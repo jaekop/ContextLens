@@ -1,94 +1,64 @@
 import crypto from 'crypto';
 import { config } from '../config.js';
-import { GeminiClient, RollingSummary, DebriefSummary } from './llm_gemini.js';
-import type {
-  DebriefMessage,
-  ErrorMessage,
-  OverlayUpdateMessage,
-  TranscriptChunk,
-  IntentTag
-} from '../ws/types.js';
-import { writeMetrics } from '../analytics/sink.js';
-import { saveSessionRecord } from '../db/mongo.js';
+import { GeminiAdapter } from '../adapters/gemini.js';
+import { SessionStore, SessionState } from '../sessions/store.js';
+import type { TranscriptChunk, OverlayUpdate, Debrief, ToolEvent } from '../ws/schemas.js';
+import type { MongoStore } from '../db/mongo.js';
+import { SnowflakeAdapter, MetricsEvent } from '../analytics/snowflake.js';
 
-export type SessionState = {
-  sessionId: string;
-  userId?: string;
-  language?: string;
-  saveMode: 'none' | 'mongo';
-  buffer: string;
-  chunks: TranscriptChunk[];
-  overlays: Array<RollingSummary & { last_updated_ms: number }>;
-  createdAt: number;
-  lastSummaryAt: number;
-  lastSummaryChars: number;
-  paused: boolean;
-};
-
-type ProcessorEmitters = {
-  emitOverlay: (message: OverlayUpdateMessage) => void;
-  emitDebrief: (message: DebriefMessage) => void;
-  emitError: (message: ErrorMessage) => void;
+export type ProcessorEmitters = {
+  overlay: (message: OverlayUpdate) => void;
+  debrief: (message: Debrief) => void;
+  error: (message: { type: 'error'; sessionId?: string; code: string; message: string }) => void;
+  tool: (message: ToolEvent) => void;
 };
 
 export class SessionProcessor {
-  private readonly sessions = new Map<string, SessionState>();
-  private readonly gemini: GeminiClient;
-  private readonly emitters: ProcessorEmitters;
+  private readonly store: SessionStore;
+  private readonly gemini: GeminiAdapter;
+  private readonly mongo: MongoStore | null;
+  private readonly snowflake: SnowflakeAdapter;
+  private emitters: ProcessorEmitters;
 
-  constructor(gemini: GeminiClient, emitters: ProcessorEmitters) {
-    this.gemini = gemini;
+  constructor(params: {
+    store: SessionStore;
+    gemini: GeminiAdapter;
+    mongo: MongoStore | null;
+    snowflake: SnowflakeAdapter;
+    emitters: ProcessorEmitters;
+  }) {
+    this.store = params.store;
+    this.gemini = params.gemini;
+    this.mongo = params.mongo;
+    this.snowflake = params.snowflake;
+    this.emitters = params.emitters;
+  }
+
+  setEmitters(emitters: ProcessorEmitters) {
     this.emitters = emitters;
   }
 
-  startSession(params: {
-    sessionId?: string;
-    userId?: string;
-    language?: string;
-    saveMode?: 'none' | 'mongo';
-  }): string {
-    const sessionId = params.sessionId ?? crypto.randomUUID();
-    const existing = this.sessions.get(sessionId);
-
-    if (existing) {
-      existing.userId = params.userId ?? existing.userId;
-      existing.language = params.language ?? existing.language;
-      existing.saveMode = params.saveMode ?? existing.saveMode;
-      return sessionId;
-    }
-
-    const saveMode = params.saveMode ?? config.saveDefault;
-
-    this.sessions.set(sessionId, {
-      sessionId,
-      userId: params.userId,
-      language: params.language,
-      saveMode,
-      buffer: '',
-      chunks: [],
-      overlays: [],
-      createdAt: Date.now(),
-      lastSummaryAt: 0,
-      lastSummaryChars: 0,
-      paused: false
-    });
-
-    return sessionId;
-  }
-
-  setPaused(sessionId: string, paused: boolean) {
-    const session = this.sessions.get(sessionId);
-    if (session) {
-      session.paused = paused;
+  async onStart(session: SessionState) {
+    if (session.saveMode === 'mongo' && session.userId && this.mongo) {
+      try {
+        await this.mongo.upsertUserPrefs({
+          userId: session.userId,
+          language: session.language,
+          saveMode: session.saveMode,
+          updatedAt: new Date()
+        });
+      } catch (error) {
+        console.warn('Failed to upsert user prefs', error);
+      }
     }
   }
 
-  async handleChunk(chunk: TranscriptChunk) {
-    const session = this.sessions.get(chunk.sessionId);
+  async handleTranscript(sessionId: string, chunk: TranscriptChunk) {
+    const session = this.store.get(sessionId);
     if (!session) {
-      this.emitters.emitError({
+      this.emitters.error({
         type: 'error',
-        sessionId: chunk.sessionId,
+        sessionId,
         code: 'session_not_found',
         message: 'Session not found. Send start_session first.'
       });
@@ -99,10 +69,6 @@ export class SessionProcessor {
     session.chunks.push(chunk);
     session.buffer += `${chunk.speaker ? `[${chunk.speaker}] ` : ''}${chunk.text}\n`;
 
-    if (session.paused) {
-      return;
-    }
-
     const now = Date.now();
     const charDelta = session.buffer.length - session.lastSummaryChars;
     const timeDelta = now - session.lastSummaryAt;
@@ -112,33 +78,44 @@ export class SessionProcessor {
     }
 
     const recentTranscript = session.buffer.slice(-config.maxRollingChars);
-    const summary = await this.gemini.generateRollingSummary(recentTranscript, session.language);
-    const confidence = clamp(summary.confidence, 0, 1);
+    const summary = await this.gemini.rollingSummary(recentTranscript, session.language);
 
-    const overlay: OverlayUpdateMessage = {
+    const overlay: OverlayUpdate = {
       type: 'overlay_update',
-      sessionId: session.sessionId,
+      sessionId,
       topic_line: summary.topic_line,
       intent_tags: summary.intent_tags,
-      confidence,
+      confidence: clamp(summary.confidence, 0, 1),
+      uncertainty_notes: summary.uncertainty_notes,
       last_updated_ms: now
     };
 
-    session.overlays.push({
-      ...summary,
-      confidence,
-      last_updated_ms: now
-    });
-
-    this.emitters.emitOverlay(overlay);
+    session.overlays.push(overlay);
     session.lastSummaryAt = now;
     session.lastSummaryChars = session.buffer.length;
+
+    if (chunk.receivedAt) {
+      session.overlayLatenciesMs.push(now - chunk.receivedAt);
+    }
+
+    this.emitters.overlay(overlay);
+
+    if (summary.intent_tags.includes('instruction')) {
+      const suggestion = buildPracticePrompt();
+      this.emitters.tool({
+        type: 'tool_event',
+        sessionId,
+        tool: 'practice_prompt',
+        suggestion,
+        last_updated_ms: now
+      });
+    }
   }
 
   async endSession(sessionId: string) {
-    const session = this.sessions.get(sessionId);
+    const session = this.store.get(sessionId);
     if (!session) {
-      this.emitters.emitError({
+      this.emitters.error({
         type: 'error',
         sessionId,
         code: 'session_not_found',
@@ -148,89 +125,136 @@ export class SessionProcessor {
     }
 
     const transcriptWindow = session.buffer.slice(-config.maxDebriefChars);
-    const debrief = await this.gemini.generateDebrief(transcriptWindow, session.language);
+    const debriefSummary = await this.gemini.debrief(transcriptWindow, session.language);
 
-    const debriefMessage: DebriefMessage = {
+    const debrief: Debrief = {
       type: 'debrief',
-      sessionId: session.sessionId,
-      bullets: debrief.bullets,
-      suggestions: debrief.suggestions,
-      uncertainty_notes: debrief.uncertainty_notes
+      sessionId,
+      bullets: debriefSummary.bullets,
+      suggestions: debriefSummary.suggestions,
+      uncertainty_notes: debriefSummary.uncertainty_notes
     };
 
-    this.emitters.emitDebrief(debriefMessage);
+    session.debrief = debrief;
+    this.emitters.debrief(debrief);
 
-    await this.persistSession(session, debrief);
-    await this.writeAnalytics(session);
+    await this.persistSession(session);
+    await this.sendMetrics(session);
 
-    this.sessions.delete(sessionId);
+    this.store.remove(sessionId);
   }
 
-  private async persistSession(session: SessionState, debrief: DebriefSummary) {
-    if (session.saveMode !== 'mongo') {
+  private async persistSession(session: SessionState) {
+    if (session.saveMode !== 'mongo') return;
+    if (!this.mongo) {
+      this.emitters.error({
+        type: 'error',
+        sessionId: session.sessionId,
+        code: 'mongo_unavailable',
+        message: 'MongoDB not configured.'
+      });
       return;
     }
 
     try {
-      await saveSessionRecord({
+      await this.mongo.saveSession({
         sessionId: session.sessionId,
         userId: session.userId,
         language: session.language,
         saveMode: session.saveMode,
         transcript: session.chunks,
         overlays: session.overlays,
-        debrief,
-        createdAt: new Date(session.createdAt)
+        debrief: session.debrief ?? {},
+        createdAt: new Date(session.createdAt),
+        updatedAt: new Date()
       });
     } catch (error) {
-      this.emitters.emitError({
+      console.warn('Mongo save failed', error);
+      this.emitters.error({
         type: 'error',
         sessionId: session.sessionId,
         code: 'mongo_write_failed',
-        message: 'Failed to persist session to MongoDB.'
+        message: 'Failed to persist session.'
       });
-      console.warn('Mongo persistence failed', error);
     }
   }
 
-  private async writeAnalytics(session: SessionState) {
-    const intentCounts = countIntentTags(session.overlays.map((o) => o.intent_tags));
-    const confidences = session.overlays.map((o) => o.confidence).filter((c) => c >= 0);
-    const avgConfidence = confidences.length
-      ? Number((confidences.reduce((a, b) => a + b, 0) / confidences.length).toFixed(2))
-      : 0;
+  private async sendMetrics(session: SessionState) {
+    const durations = estimateDuration(session);
+    const avgConfidence = average(session.overlays.map((o) => o.confidence));
+    const intentCounts = countIntentTags(session.overlays);
+    const latencyP50 = percentile(session.overlayLatenciesMs, 50);
 
-    const duration = estimateDuration(session.chunks);
+    const event: MetricsEvent = {
+      sessionId_hash: hashSessionId(session.sessionId),
+      duration_s: durations,
+      language: session.language ?? 'unknown',
+      avg_confidence: avgConfidence,
+      intent_counts: intentCounts,
+      latency_ms_p50: latencyP50
+    };
 
-    await writeMetrics(
-      {
+    try {
+      await this.snowflake.send(event);
+    } catch (error) {
+      console.warn('Metrics send failed', error);
+      this.emitters.error({
+        type: 'error',
         sessionId: session.sessionId,
-        duration,
-        intent_counts: intentCounts,
-        avg_confidence: avgConfidence,
-        language: session.language ?? 'unknown'
-      },
-      config.analyticsPath
-    );
+        code: 'analytics_failed',
+        message: 'Failed to send analytics.'
+      });
+    }
   }
 }
 
-function estimateDuration(chunks: TranscriptChunk[]): number {
-  if (chunks.length === 0) return 0;
-  const sorted = [...chunks].sort((a, b) => a.t0_ms - b.t0_ms);
-  return Math.max(0, sorted[sorted.length - 1].t1_ms - sorted[0].t0_ms);
+function buildPracticePrompt(): string {
+  return 'Try asking the learner to restate the concept in their own words.';
 }
 
-function countIntentTags(tags: IntentTag[][]) {
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
+}
+
+function estimateDuration(session: SessionState): number {
+  if (session.chunks.length === 0) return 0;
+  const withTimes = session.chunks
+    .map((chunk) => ({
+      t0: chunk.t0_ms ?? 0,
+      t1: chunk.t1_ms ?? chunk.t0_ms ?? 0
+    }))
+    .sort((a, b) => a.t0 - b.t0);
+  const start = withTimes[0]?.t0 ?? 0;
+  const end = withTimes[withTimes.length - 1]?.t1 ?? start;
+  if (end <= start) {
+    return Math.max(0, Math.round((Date.now() - session.createdAt) / 1000));
+  }
+  return Math.max(0, Math.round((end - start) / 1000));
+}
+
+function countIntentTags(overlays: OverlayUpdate[]): Record<string, number> {
   const counts: Record<string, number> = {};
-  for (const group of tags) {
-    for (const tag of group) {
+  for (const overlay of overlays) {
+    for (const tag of overlay.intent_tags) {
       counts[tag] = (counts[tag] ?? 0) + 1;
     }
   }
   return counts;
 }
 
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, value));
+function average(values: number[]): number {
+  if (values.length === 0) return 0;
+  const total = values.reduce((sum, val) => sum + val, 0);
+  return Number((total / values.length).toFixed(2));
+}
+
+function percentile(values: number[], p: number): number {
+  if (values.length === 0) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  const index = Math.floor((p / 100) * (sorted.length - 1));
+  return sorted[index] ?? 0;
+}
+
+function hashSessionId(sessionId: string): string {
+  return crypto.createHash('sha256').update(sessionId).digest('hex');
 }
