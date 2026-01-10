@@ -2,5 +2,7 @@ node_modules
 server/node_modules
 server/dist
 .env
+.env.local
 analytics
 *.log
+.env.local
