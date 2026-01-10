@@ -85,7 +85,16 @@ async function boot() {
           properties: {
             ok: { type: 'boolean' },
             mode: { type: 'string' },
-            results: { type: 'object' }
+            results: {
+              type: 'object',
+              additionalProperties: {
+                type: 'object',
+                properties: {
+                  ok: { type: 'boolean' },
+                  error: { type: 'string' }
+                }
+              }
+            }
           }
         }
       }
