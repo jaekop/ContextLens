@@ -23,6 +23,16 @@ Quick HTTP sanity check:
 ./scripts/http_test.sh
 ```
 
+Swagger UI (HTTP only):
+```
+http://localhost:8080/docs
+```
+
+WebSocket tester page:
+```
+http://localhost:8080/ws-test
+```
+
 ## WebSocket Contract
 Client → Server:
 - `start_session`: `{type:"start_session", sessionId?, userId?, language?, saveMode:"none"|"mongo", sttMode:"mock"|"deepgram"}`
@@ -39,6 +49,7 @@ Server → Client:
 HTTP:
 - `GET /health` → `{ ok: true }`
 - `GET /status` → `{ ok: true, sessions: number }`
+- `GET /integrations/test?mode=keys|live` → checks keys or runs live connectivity tests
 
 ## Deepgram (Mock vs Real)
 - Mock mode: `STT_DEFAULT=mock` and send `transcript_chunk` messages.
@@ -64,6 +75,9 @@ create table if not exists CONTEXT_LENS_METRICS (
 
 ## Environment Variables
 See `.env.example`.
+
+## AsyncAPI Spec
+The WebSocket contract is described in `asyncapi.yaml`.
 
 ## Vultr Deploy (Systemd Example)
 On a Vultr VM (Ubuntu):

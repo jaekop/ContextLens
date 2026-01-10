@@ -10,3 +10,8 @@ echo
 
 echo "GET $BASE_URL/status"
 curl -s "$BASE_URL/status" | jq . || curl -s "$BASE_URL/status"
+
+echo
+
+echo "GET $BASE_URL/integrations/test"
+curl -s "$BASE_URL/integrations/test" | jq . || curl -s "$BASE_URL/integrations/test"

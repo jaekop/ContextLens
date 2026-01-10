@@ -1,0 +1,127 @@
+asyncapi: '2.6.0'
+info:
+  title: Context Lens WS API
+  version: '0.1.0'
+  description: WebSocket protocol for Context Lens realtime summaries.
+servers:
+  local:
+    url: ws://localhost:8080/ws
+    protocol: ws
+channels:
+  /ws:
+    publish:
+      message:
+        oneOf:
+          - $ref: '#/components/messages/StartSession'
+          - $ref: '#/components/messages/AudioChunk'
+          - $ref: '#/components/messages/TranscriptChunk'
+          - $ref: '#/components/messages/EndSession'
+    subscribe:
+      message:
+        oneOf:
+          - $ref: '#/components/messages/OverlayUpdate'
+          - $ref: '#/components/messages/Debrief'
+          - $ref: '#/components/messages/Error'
+          - $ref: '#/components/messages/ToolEvent'
+components:
+  messages:
+    StartSession:
+      name: start_session
+      payload:
+        type: object
+        required: [type]
+        properties:
+          type: { const: start_session }
+          sessionId: { type: string }
+          userId: { type: string }
+          language: { type: string }
+          saveMode: { type: string, enum: [none, mongo] }
+          sttMode: { type: string, enum: [mock, deepgram] }
+    AudioChunk:
+      name: audio_chunk
+      payload:
+        type: object
+        required: [type, sessionId, pcm16_base64, sampleRate, t_ms]
+        properties:
+          type: { const: audio_chunk }
+          sessionId: { type: string }
+          pcm16_base64: { type: string }
+          sampleRate: { type: number }
+          t_ms: { type: number }
+    TranscriptChunk:
+      name: transcript_chunk
+      payload:
+        type: object
+        required: [type, sessionId, text]
+        properties:
+          type: { const: transcript_chunk }
+          sessionId: { type: string }
+          text: { type: string }
+          t0_ms: { type: number }
+          t1_ms: { type: number }
+          speaker: { type: string }
+    EndSession:
+      name: end_session
+      payload:
+        type: object
+        required: [type, sessionId]
+        properties:
+          type: { const: end_session }
+          sessionId: { type: string }
+    OverlayUpdate:
+      name: overlay_update
+      payload:
+        type: object
+        required: [type, sessionId, topic_line, intent_tags, confidence, uncertainty_notes, last_updated_ms]
+        properties:
+          type: { const: overlay_update }
+          sessionId: { type: string }
+          topic_line: { type: string }
+          intent_tags:
+            type: array
+            items:
+              type: string
+              enum: [planning, feedback, debate, smalltalk, joking, venting, support, negotiation, instruction]
+          confidence: { type: number }
+          uncertainty_notes:
+            type: array
+            items: { type: string }
+          last_updated_ms: { type: number }
+    Debrief:
+      name: debrief
+      payload:
+        type: object
+        required: [type, sessionId, bullets, suggestions, uncertainty_notes]
+        properties:
+          type: { const: debrief }
+          sessionId: { type: string }
+          bullets:
+            type: array
+            items: { type: string }
+          suggestions:
+            type: array
+            items: { type: string }
+          uncertainty_notes:
+            type: array
+            items: { type: string }
+    Error:
+      name: error
+      payload:
+        type: object
+        required: [type, code, message]
+        properties:
+          type: { const: error }
+          sessionId: { type: string }
+          code: { type: string }
+          message: { type: string }
+    ToolEvent:
+      name: tool_event
+      payload:
+        type: object
+        required: [type, sessionId, tool, suggestion, last_updated_ms]
+        properties:
+          type: { const: tool_event }
+          sessionId: { type: string }
+          tool: { type: string, enum: [practice_prompt] }
+          suggestion: { type: string }
+          last_updated_ms: { type: number }

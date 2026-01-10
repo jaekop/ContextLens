@@ -44,6 +44,27 @@ export class GeminiAdapter {
     }
   }
 
+  isReady(): boolean {
+    return Boolean(this.client);
+  }
+
+  async testConnection(): Promise<{ ok: boolean; error?: string }> {
+    if (!this.client) {
+      return { ok: false, error: 'missing_api_key' };
+    }
+    try {
+      const model = this.client.getGenerativeModel({
+        model: this.modelName,
+        generationConfig: { responseMimeType: 'application/json' }
+      });
+      const result = await model.generateContent('Return JSON {"ok": true}.');
+      const parsed = parseJson(result.response.text(), z.object({ ok: z.boolean() }));
+      return parsed?.ok ? { ok: true } : { ok: false, error: 'invalid_response' };
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : 'unknown_error' };
+    }
+  }
+
   async rollingSummary(transcript: string, language?: string): Promise<RollingSummary> {
     if (!this.client) {
       return heuristicRolling(transcript);

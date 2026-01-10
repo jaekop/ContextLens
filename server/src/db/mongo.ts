@@ -60,6 +60,11 @@ export class MongoStore {
     await this.sessions.insertOne(record);
   }
 
+  async ping(): Promise<{ ok: boolean }> {
+    await this.db.command({ ping: 1 });
+    return { ok: true };
+  }
+
   async close() {
     await this.client.close();
   }

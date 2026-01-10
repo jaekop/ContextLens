@@ -23,6 +23,25 @@ export class DeepgramAdapter {
     return Boolean(this.apiKey);
   }
 
+  async testConnection(): Promise<{ ok: boolean; error?: string }> {
+    if (!this.apiKey) {
+      return { ok: false, error: 'missing_api_key' };
+    }
+    try {
+      const response = await fetch('https://api.deepgram.com/v1/projects', {
+        headers: {
+          Authorization: `Token ${this.apiKey}`
+        }
+      });
+      if (!response.ok) {
+        return { ok: false, error: `status_${response.status}` };
+      }
+      return { ok: true };
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : 'unknown_error' };
+    }
+  }
+
   startStream(language: string | undefined, onTranscript: TranscriptCallback): SttStreamHandle {
     if (!this.apiKey) {
       throw new Error('Deepgram API key missing');

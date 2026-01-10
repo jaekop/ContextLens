@@ -3,6 +3,6 @@ server/node_modules
 server/dist
 .env
 .env.local
-analytics
+/analytics
 *.log
 .env.local
