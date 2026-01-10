@@ -58,7 +58,11 @@ export class DeepgramAdapter {
 
     const sendAudio = (pcm16Base64: string) => {
       const buffer = Buffer.from(pcm16Base64, 'base64');
-      connection.send(buffer);
+      const arrayBuffer = buffer.buffer.slice(
+        buffer.byteOffset,
+        buffer.byteOffset + buffer.byteLength
+      );
+      connection.send(arrayBuffer);
     };
 
     const stop = () => {

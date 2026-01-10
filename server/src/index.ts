@@ -12,14 +12,18 @@ import { SnowflakeAdapter } from './analytics/snowflake.js';
 async function boot() {
   const fastify = Fastify({ logger: true });
 
-  fastify.get('/health', async () => ({ ok: true }));
-
   const mongo = await MongoStore.connect(config.mongoUri).catch((error) => {
     fastify.log.warn({ error }, 'Mongo connection failed');
     return null;
   });
 
   const store = new SessionStore();
+
+  fastify.get('/health', async () => ({ ok: true }));
+  fastify.get('/status', async () => ({
+    ok: true,
+    sessions: store.list().length
+  }));
   const gemini = new GeminiAdapter({
     apiKey: config.geminiApiKey,
     model: config.geminiModel

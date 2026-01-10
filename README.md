@@ -18,6 +18,11 @@ In another terminal, run the client stub (Node 20+ with global WebSocket):
 node --loader tsx ../client_stub/index.ts
 ```
 
+Quick HTTP sanity check:
+```bash
+./scripts/http_test.sh
+```
+
 ## WebSocket Contract
 Client → Server:
 - `start_session`: `{type:"start_session", sessionId?, userId?, language?, saveMode:"none"|"mongo", sttMode:"mock"|"deepgram"}`
@@ -30,6 +35,10 @@ Server → Client:
 - `debrief`: `{type:"debrief", sessionId, bullets, suggestions, uncertainty_notes}`
 - `error`: `{type:"error", sessionId?, code, message}`
 - `tool_event`: `{type:"tool_event", sessionId, tool:"practice_prompt", suggestion, last_updated_ms}`
+
+HTTP:
+- `GET /health` → `{ ok: true }`
+- `GET /status` → `{ ok: true, sessions: number }`
 
 ## Deepgram (Mock vs Real)
 - Mock mode: `STT_DEFAULT=mock` and send `transcript_chunk` messages.
