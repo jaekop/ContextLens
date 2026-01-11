@@ -54,6 +54,7 @@ export class VisionService extends EventEmitter {
           : await this.captureSnapshot();
         if (snapshot) {
           this.latest = snapshot;
+          this.updateFramePreview(snapshot);
           this.emit('snapshot', snapshot);
         }
       } catch (error) {
@@ -64,6 +65,7 @@ export class VisionService extends EventEmitter {
             ts_ms: Date.now(),
             notes: dedupeNotes([...(this.latest.notes ?? []), 'Vision degraded.'])
           };
+          this.updateFramePreview(this.latest);
           this.emit('snapshot', this.latest);
         }
       }
@@ -110,6 +112,13 @@ export class VisionService extends EventEmitter {
       objects: [object],
       notes: ['mock_mode']
     };
+  }
+
+  private updateFramePreview(snapshot: VisionSnapshot) {
+    const source = this.frameSource as { setLatestSnapshot?: (snap: VisionSnapshot) => void } | null;
+    if (source?.setLatestSnapshot) {
+      source.setLatestSnapshot(snapshot);
+    }
   }
 }
 

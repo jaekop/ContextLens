@@ -14,6 +14,7 @@
   <h1>Vision Capture</h1>
   <video id="video" autoplay muted playsinline></video>
   <div class="status" id="status">Waiting for camera permission...</div>
+  <div class="status" id="vision">No vision snapshot yet.</div>
   <script>
     const statusEl = document.getElementById('status');
     const video = document.getElementById('video');
@@ -81,6 +82,20 @@
 
     window.captureAndSend = captureAndSend;
     init();
+    async function pollVision() {
+      try {
+        const res = await fetch('/vision');
+        if (!res.ok) return;
+        const snap = await res.json();
+        const summary = [
+          `env: ${snap.env_label} (${Math.round((snap.env_confidence || 0) * 100)}%)`,
+          snap.objects ? `objects: ${snap.objects.join(', ')}` : '',
+          snap.notes ? `notes: ${snap.notes.join(' | ')}` : ''
+        ].filter(Boolean).join(' | ');
+        document.getElementById('vision').textContent = summary || 'No summary.';
+      } catch (err) {}
+    }
+    setInterval(pollVision, 1000);
   </script>
 </body>
 </html>

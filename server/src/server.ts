@@ -3,6 +3,7 @@ import { z } from 'zod';
 import fs from 'fs/promises';
 import path from 'path';
 import { EventEmitter } from 'events';
+import type { VisionSnapshot } from './vision/vision.types.js';
 
 const FrameSchema = z.object({
   image_base64: z.string().min(1),
@@ -14,6 +15,7 @@ type FramePayload = z.infer<typeof FrameSchema> & { ts_ms: number; id: string };
 export class FrameCaptureServer extends EventEmitter {
   private server: FastifyInstance | null = null;
   private lastFrame: FramePayload | null = null;
+  private lastSnapshot: VisionSnapshot | null = null;
   private counter = 0;
   private listeningPort: number | null = null;
 
@@ -45,6 +47,14 @@ export class FrameCaptureServer extends EventEmitter {
       reply.send(this.lastFrame);
     });
 
+    app.get('/vision', async (_, reply) => {
+      if (!this.lastSnapshot) {
+        reply.code(404).send({ error: 'no_snapshot' });
+        return;
+      }
+      reply.send(this.lastSnapshot);
+    });
+
     app.get('/capture.html', async (_, reply) => {
       const filePath = path.join(process.cwd(), 'public', 'capture.html');
       const html = await fs.readFile(filePath, 'utf8');
@@ -71,6 +81,10 @@ export class FrameCaptureServer extends EventEmitter {
       throw new Error('Capture server not started');
     }
     return `http://127.0.0.1:${this.listeningPort}`;
+  }
+
+  setLatestSnapshot(snapshot: VisionSnapshot) {
+    this.lastSnapshot = snapshot;
   }
 
   waitForFrame(timeoutMs: number): Promise<FramePayload> {

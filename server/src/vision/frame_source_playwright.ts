@@ -1,5 +1,6 @@
 import { chromium, Browser, Page } from 'playwright';
 import { FrameCaptureServer } from '../server.js';
+import type { VisionSnapshot } from './vision.types.js';
 import type { FrameSource } from './frame_source.js';
 
 export class PlaywrightFrameSource implements FrameSource {
@@ -58,5 +59,9 @@ export class PlaywrightFrameSource implements FrameSource {
     }
     const frame = await this.server.waitForFrame(this.timeoutMs);
     return Buffer.from(frame.image_base64, 'base64');
+  }
+
+  setLatestSnapshot(snapshot: VisionSnapshot) {
+    this.server.setLatestSnapshot(snapshot);
   }
 }
