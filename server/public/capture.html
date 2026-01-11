@@ -60,14 +60,20 @@
       }
       const image_base64 = btoa(binary);
       try {
-        await fetch('/frame', {
+        const res = await fetch(new URL('/frame', window.location.href).toString(), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ image_base64, mime: 'image/jpeg' })
         });
+        if (!res.ok) {
+          console.log('frame post failed', res.status);
+          statusEl.textContent = 'Failed to send frame.';
+          return false;
+        }
         statusEl.textContent = 'Frame sent at ' + new Date().toLocaleTimeString();
         return true;
       } catch (err) {
+        console.log('frame post error', String(err));
         statusEl.textContent = 'Failed to send frame.';
         return false;
       }

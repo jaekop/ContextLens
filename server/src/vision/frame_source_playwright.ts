@@ -31,7 +31,8 @@ export class PlaywrightFrameSource implements FrameSource {
         timeout: this.timeoutMs
       });
     } catch {
-      console.warn('Camera not ready; check OS permissions for camera access.');
+      const error = await this.page.evaluate(() => (window as any).__captureError ?? null);
+      console.warn('Camera not ready; check OS permissions for camera access.', error ?? '');
     }
   }
 
