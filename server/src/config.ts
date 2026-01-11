@@ -1,4 +1,7 @@
 import { z } from 'zod';
+import { loadEnv } from './load_env.js';
+
+loadEnv();
 
 const envSchema = z.object({
   PORT: z.coerce.number().default(8080),

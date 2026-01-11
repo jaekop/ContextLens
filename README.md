@@ -18,9 +18,12 @@ The MVP serves a live dashboard at `/` and a JSON feed at `/display.json`. The d
 - Dashboard serves `GET /display.json` and `GET /` for a local-first view (VR can open the URL).
 
 ## Local Run (Mock Mode)
+Create a local environment file at repo root:
 ```bash
-cp .env.example .env
-
+touch .env.local
+```
+Add your values to `.env.local`, then:
+```bash
 docker compose -f docker/docker-compose.yml up -d
 
 cd server
@@ -152,7 +155,7 @@ create table if not exists CONTEXT_LENS_METRICS (
 ```
 
 ## Environment Variables
-See `.env.example`.
+Use `.env.local` at repo root (preferred). The server loads `.env.local` first, then `.env` if present.
 
 ## Recommended Test Order (Zero VR)
 1) Health + docs: `/health`, `/status`, `/docs`

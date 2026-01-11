@@ -1,5 +1,7 @@
-import 'dotenv/config';
+import { loadEnv } from '../load_env.js';
 import { VisionService } from './vision.service.js';
+
+loadEnv();
 
 const mode = (process.env.VISION_MODE ?? 'mock') as 'mock' | 'gemini';
 const intervalMs = Number(process.env.VISION_INTERVAL_MS ?? 3000);
