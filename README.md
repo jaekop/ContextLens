@@ -138,6 +138,7 @@ npx playwright install
 ```
 
 When prompted, allow camera access for the Playwright browser window. If denied, the service falls back to mock mode and logs a warning.
+If you see `capture_timeout`, make sure macOS allows camera access for Terminal (or your shell) in System Settings → Privacy & Security → Camera.
 
 ## MongoDB Atlas (Opt-In)
 - Default `saveMode=none` (no persistence).

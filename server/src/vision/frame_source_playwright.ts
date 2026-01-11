@@ -16,11 +16,23 @@ export class PlaywrightFrameSource implements FrameSource {
   async start(): Promise<void> {
     await this.server.start(0);
     const baseUrl = this.server.getBaseUrl();
-    this.browser = await chromium.launch({ headless: false });
+    this.browser = await chromium.launch({
+      headless: false,
+      args: ['--use-fake-ui-for-media-stream']
+    });
     const context = await this.browser.newContext({ permissions: ['camera'] });
     this.page = await context.newPage();
+    this.page.on('console', (msg) => {
+      console.log('[capture]', msg.text());
+    });
     await this.page.goto(`${baseUrl}/capture.html`, { waitUntil: 'domcontentloaded' });
-    await this.page.waitForTimeout(500);
+    try {
+      await this.page.waitForFunction(() => (window as any).__captureReady === true, {
+        timeout: this.timeoutMs
+      });
+    } catch {
+      console.warn('Camera not ready; check OS permissions for camera access.');
+    }
   }
 
   async stop(): Promise<void> {
@@ -39,7 +51,10 @@ export class PlaywrightFrameSource implements FrameSource {
     if (!this.page) {
       throw new Error('Playwright page not initialized');
     }
-    await this.page.evaluate(() => (window as any).captureAndSend());
+    const ok = await this.page.evaluate(() => (window as any).captureAndSend());
+    if (!ok) {
+      throw new Error('capture_not_ready');
+    }
     const frame = await this.server.waitForFrame(this.timeoutMs);
     return Buffer.from(frame.image_base64, 'base64');
   }

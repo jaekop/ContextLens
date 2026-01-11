@@ -27,8 +27,10 @@
           video.onloadedmetadata = () => resolve();
         });
         streamReady = true;
+        window.__captureReady = true;
         statusEl.textContent = 'Camera ready.';
       } catch (err) {
+        window.__captureError = String(err);
         statusEl.textContent = 'Camera permission denied or unavailable.';
       }
     }
@@ -39,8 +41,13 @@
         return false;
       }
       const canvas = document.createElement('canvas');
-      canvas.width = video.videoWidth || 320;
-      canvas.height = video.videoHeight || 240;
+      const maxWidth = 640;
+      const maxHeight = 360;
+      const vw = video.videoWidth || 320;
+      const vh = video.videoHeight || 240;
+      const scale = Math.min(maxWidth / vw, maxHeight / vh, 1);
+      canvas.width = Math.max(1, Math.round(vw * scale));
+      canvas.height = Math.max(1, Math.round(vh * scale));
       const ctx = canvas.getContext('2d');
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
       const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.8));
@@ -52,13 +59,18 @@
         binary += String.fromCharCode(bytes[i]);
       }
       const image_base64 = btoa(binary);
-      await fetch('/frame', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ image_base64, mime: 'image/jpeg' })
-      });
-      statusEl.textContent = 'Frame sent at ' + new Date().toLocaleTimeString();
-      return true;
+      try {
+        await fetch('/frame', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ image_base64, mime: 'image/jpeg' })
+        });
+        statusEl.textContent = 'Frame sent at ' + new Date().toLocaleTimeString();
+        return true;
+      } catch (err) {
+        statusEl.textContent = 'Failed to send frame.';
+        return false;
+      }
     }
 
     window.captureAndSend = captureAndSend;

@@ -19,7 +19,7 @@ export class FrameCaptureServer extends EventEmitter {
 
   async start(port = 0) {
     if (this.server) return;
-    const app = Fastify();
+    const app = Fastify({ bodyLimit: 5 * 1024 * 1024 });
 
     app.post('/frame', async (request, reply) => {
       const parsed = FrameSchema.safeParse(request.body);
