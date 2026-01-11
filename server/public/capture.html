@@ -41,18 +41,26 @@
         statusEl.textContent = 'Camera not ready.';
         return false;
       }
+      if (video.readyState < 2) {
+        console.log('video not ready', video.readyState);
+        return false;
+      }
       const canvas = document.createElement('canvas');
       const maxWidth = 640;
       const maxHeight = 360;
       const vw = video.videoWidth || 320;
       const vh = video.videoHeight || 240;
+      console.log('capture dims', vw, vh);
       const scale = Math.min(maxWidth / vw, maxHeight / vh, 1);
       canvas.width = Math.max(1, Math.round(vw * scale));
       canvas.height = Math.max(1, Math.round(vh * scale));
       const ctx = canvas.getContext('2d');
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
       const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.8));
-      if (!blob) return false;
+      if (!blob) {
+        console.log('blob null');
+        return false;
+      }
       const buffer = await blob.arrayBuffer();
       const bytes = new Uint8Array(buffer);
       let binary = '';
@@ -61,7 +69,9 @@
       }
       const image_base64 = btoa(binary);
       try {
-        const res = await fetch(new URL('/frame', window.location.href).toString(), {
+        const targetUrl = new URL('/frame', window.location.href).toString();
+        console.log('posting frame to', targetUrl);
+        const res = await fetch(targetUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ image_base64, mime: 'image/jpeg' })

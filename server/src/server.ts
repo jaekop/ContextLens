@@ -26,6 +26,7 @@ export class FrameCaptureServer extends EventEmitter {
     app.post('/frame', async (request, reply) => {
       const parsed = FrameSchema.safeParse(request.body);
       if (!parsed.success) {
+        console.warn('frame payload invalid');
         reply.code(400).send({ error: 'invalid_payload' });
         return;
       }
@@ -36,6 +37,7 @@ export class FrameCaptureServer extends EventEmitter {
       };
       this.lastFrame = payload;
       this.emit('frame', payload);
+      console.log('frame received', payload.image_base64.length);
       reply.send({ ok: true });
     });
 
@@ -49,7 +51,7 @@ export class FrameCaptureServer extends EventEmitter {
 
     app.get('/vision', async (_, reply) => {
       if (!this.lastSnapshot) {
-        reply.code(404).send({ error: 'no_snapshot' });
+        reply.send({ error: 'no_snapshot' });
         return;
       }
       reply.send(this.lastSnapshot);
