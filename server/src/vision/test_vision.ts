@@ -19,10 +19,19 @@ service.on('snapshot', (snap) => {
 
 async function run() {
   await service.start();
-  setTimeout(async () => {
-    await service.stop();
-    process.exit(0);
-  }, 20000);
+  const durationMs = Number(process.env.VISION_TEST_DURATION_MS ?? process.argv[2] ?? 60000);
+  if (Number.isFinite(durationMs) && durationMs > 0) {
+    setTimeout(async () => {
+      await service.stop();
+      process.exit(0);
+    }, durationMs);
+  } else {
+    console.log('Vision test running until Ctrl+C...');
+    process.on('SIGINT', async () => {
+      await service.stop();
+      process.exit(0);
+    });
+  }
 }
 
 run().catch((error) => {

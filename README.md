@@ -132,6 +132,13 @@ cd server
 VISION_MODE=gemini GEMINI_API_KEY=YOUR_KEY npm run test:vision
 ```
 
+Control how long the test runs:
+```bash
+VISION_TEST_DURATION_MS=60000 npm run test:vision
+# or run until Ctrl+C
+VISION_TEST_DURATION_MS=0 npm run test:vision
+```
+
 If Playwright is not installed yet:
 ```bash
 npx playwright install
