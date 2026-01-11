@@ -11,6 +11,7 @@ export class VisionService extends EventEmitter {
   private frameSource: PlaywrightFrameSource | null = null;
   private gemini: GeminiVisionClient | null = null;
   private mockIndex = 0;
+  private backoffUntil = 0;
 
   constructor(config: VisionServiceConfig) {
     super();
@@ -48,6 +49,10 @@ export class VisionService extends EventEmitter {
 
     const loop = async () => {
       if (!this.running) return;
+      if (Date.now() < this.backoffUntil) {
+        this.timer = setTimeout(loop, interval);
+        return;
+      }
       try {
         const snapshot = this.config.mode === 'mock'
           ? this.mockSnapshot()
@@ -59,19 +64,22 @@ export class VisionService extends EventEmitter {
         }
       } catch (error) {
         console.warn('VisionService tick failed', error);
-        if (this.latest) {
-          this.latest = {
-            ...this.latest,
-            ts_ms: Date.now(),
-            notes: dedupeNotes([...(this.latest.notes ?? []), 'vision_degraded']),
-            reliability: {
-              ...this.latest.reliability,
-              limitations: dedupeNotes([...(this.latest.reliability.limitations ?? []), 'capture_error'])
-            }
-          };
-          this.updateFramePreview(this.latest);
-          this.emit('snapshot', this.latest);
+        const backoffMs = extractBackoffMs(error);
+        if (backoffMs) {
+          this.backoffUntil = Date.now() + backoffMs;
         }
+        const degraded = this.latest ?? this.fallbackSnapshot();
+        this.latest = {
+          ...degraded,
+          ts_ms: Date.now(),
+          notes: dedupeNotes([...(degraded.notes ?? []), 'vision_degraded']),
+          reliability: {
+            ...degraded.reliability,
+            limitations: dedupeNotes([...(degraded.reliability.limitations ?? []), 'capture_error'])
+          }
+        };
+        this.updateFramePreview(this.latest);
+        this.emit('snapshot', this.latest);
       }
       this.timer = setTimeout(loop, interval);
     };
@@ -159,6 +167,50 @@ export class VisionService extends EventEmitter {
     };
   }
 
+  private fallbackSnapshot(): VisionSnapshot {
+    return {
+      ts_ms: Date.now(),
+      environment: {
+        label: 'unknown',
+        confidence: 0.2,
+        objects: [],
+        lighting: {
+          level: 'normal',
+          confidence: 0.4
+        }
+      },
+      people: {
+        count_estimate: 0,
+        count_confidence: 0.2,
+        proximity: 'medium',
+        confidence: 0.2
+      },
+      social_cues: {
+        facial_expression_summary: {
+          label: 'unknown',
+          confidence: 0.2
+        },
+        body_posture_summary: {
+          label: 'unknown',
+          confidence: 0.2
+        },
+        gaze_summary: {
+          label: 'unknown',
+          confidence: 0.2
+        },
+        interaction_context: {
+          label: 'unknown',
+          confidence: 0.2
+        }
+      },
+      reliability: {
+        overall_confidence: 0.2,
+        limitations: ['no_snapshot']
+      },
+      notes: ['no_snapshot']
+    };
+  }
+
   private updateFramePreview(snapshot: VisionSnapshot) {
     const source = this.frameSource as { setLatestSnapshot?: (snap: VisionSnapshot) => void } | null;
     if (source?.setLatestSnapshot) {
@@ -176,4 +228,17 @@ function seededConfidence(seed: number): number {
 function dedupeNotes(notes: string[]): string[] {
   const set = new Set(notes);
   return Array.from(set).slice(0, 3);
+}
+
+function extractBackoffMs(error: unknown): number | null {
+  const message = error instanceof Error ? error.message : String(error);
+  if (!message) return null;
+  const retryMatch = message.match(/retryDelay\":\"(\d+)s\"/);
+  if (retryMatch) {
+    return Number(retryMatch[1]) * 1000;
+  }
+  if (message.includes('429') || message.includes('Too Many Requests')) {
+    return 15000;
+  }
+  return null;
 }
