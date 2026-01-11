@@ -41,6 +41,10 @@ export class FrameCaptureServer extends EventEmitter {
       reply.send({ ok: true });
     });
 
+    app.get('/favicon.ico', async (_, reply) => {
+      reply.code(204).send();
+    });
+
     app.get('/frame', async (_, reply) => {
       if (!this.lastFrame) {
         reply.code(404).send({ error: 'no_frame' });

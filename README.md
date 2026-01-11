@@ -147,6 +147,24 @@ npx playwright install
 When prompted, allow camera access for the Playwright browser window. If denied, the service falls back to mock mode and logs a warning.
 If you see `capture_timeout`, make sure macOS allows camera access for Terminal (or your shell) in System Settings → Privacy & Security → Camera.
 
+### VisionService (Minimal File Set)
+If someone wants to reuse the VisionService code in another project, they need:
+- `server/src/vision/vision.types.ts`
+- `server/src/vision/vision.prompt.ts`
+- `server/src/vision/gemini.vision.ts`
+- `server/src/vision/frame_source.ts`
+- `server/src/vision/frame_source_playwright.ts`
+- `server/src/vision/vision.service.ts`
+- `server/src/vision/test_vision.ts` (optional test harness)
+- `server/src/server.ts` (capture server for frames)
+- `server/public/capture.html` (camera page)
+
+Required deps from `server/package.json`:
+- `playwright`, `fastify`, `@google/generative-ai`, `zod`, `tsx`
+
+Required env:
+- `GEMINI_API_KEY`, `VISION_MODE=gemini`, `VISION_INTERVAL_MS`
+
 ## MongoDB Atlas (Opt-In)
 - Default `saveMode=none` (no persistence).
 - Use `saveMode:"mongo"` to persist.

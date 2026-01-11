@@ -5,19 +5,46 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Vision Capture</title>
   <style>
-    body { font-family: system-ui, sans-serif; margin: 16px; }
-    video { width: 240px; height: 180px; background: #111; }
+    body { font-family: system-ui, sans-serif; margin: 16px; color: #1c1c1c; }
+    .wrap { display: flex; gap: 16px; align-items: flex-start; }
+    video { width: 320px; height: 240px; background: #111; border-radius: 8px; }
     .status { margin-top: 8px; font-size: 12px; color: #555; }
+    .panel { flex: 1; min-width: 260px; }
+    .card { border: 1px solid #e6e6e6; border-radius: 8px; padding: 10px 12px; margin-bottom: 12px; background: #fafafa; }
+    .title { font-weight: 600; margin-bottom: 6px; }
+    .row { display: flex; gap: 8px; flex-wrap: wrap; font-size: 13px; }
+    .pill { background: #111; color: #fff; padding: 2px 8px; border-radius: 999px; font-size: 12px; }
+    .muted { color: #777; font-size: 12px; }
+    pre { margin: 0; white-space: pre-wrap; font-size: 12px; background: #111; color: #f1f1f1; padding: 10px; border-radius: 8px; }
   </style>
 </head>
 <body>
   <h1>Vision Capture</h1>
-  <video id="video" autoplay muted playsinline></video>
-  <div class="status" id="status">Waiting for camera permission...</div>
-  <div class="status" id="vision">No vision snapshot yet.</div>
+  <div class="wrap">
+    <div>
+      <video id="video" autoplay muted playsinline></video>
+      <div class="status" id="status">Waiting for camera permission...</div>
+    </div>
+    <div class="panel">
+      <div class="card">
+        <div class="title">Snapshot Summary</div>
+        <div class="row" id="summaryPills">
+          <span class="pill">No snapshot yet</span>
+        </div>
+        <div class="muted" id="summaryMeta">Waiting for first snapshot...</div>
+      </div>
+      <div class="card">
+        <div class="title">Details</div>
+        <pre id="visionJson">No vision snapshot yet.</pre>
+      </div>
+    </div>
+  </div>
   <script>
     const statusEl = document.getElementById('status');
     const video = document.getElementById('video');
+    const summaryPills = document.getElementById('summaryPills');
+    const summaryMeta = document.getElementById('summaryMeta');
+    const visionJson = document.getElementById('visionJson');
     let streamReady = false;
 
     async function init() {
@@ -92,19 +119,50 @@
 
     window.captureAndSend = captureAndSend;
     init();
+    function renderPills(pairs) {
+      summaryPills.innerHTML = '';
+      if (!pairs.length) {
+        summaryPills.innerHTML = '<span class="pill">No snapshot yet</span>';
+        return;
+      }
+      for (const text of pairs) {
+        const span = document.createElement('span');
+        span.className = 'pill';
+        span.textContent = text;
+        summaryPills.appendChild(span);
+      }
+    }
+
     async function pollVision() {
       try {
         const res = await fetch('/vision');
         if (!res.ok) return;
         const snap = await res.json();
-        const summary = [
-          snap.environment ? `env: ${snap.environment.label} (${Math.round((snap.environment.confidence || 0) * 100)}%)` : '',
-          snap.environment?.objects ? `objects: ${snap.environment.objects.join(', ')}` : '',
-          snap.people ? `people: ${snap.people.count_estimate} (${Math.round((snap.people.count_confidence || 0) * 100)}%)` : '',
-          snap.social_cues?.interaction_context ? `context: ${snap.social_cues.interaction_context.label}` : '',
-          snap.notes ? `notes: ${snap.notes.join(' | ')}` : ''
-        ].filter(Boolean).join(' | ');
-        document.getElementById('vision').textContent = summary || 'No summary.';
+        if (snap?.error) {
+          renderPills([]);
+          summaryMeta.textContent = snap.error;
+          visionJson.textContent = 'No vision snapshot yet.';
+          return;
+        }
+        const pills = [];
+        if (snap.environment?.label) {
+          pills.push(`env: ${snap.environment.label}`);
+        }
+        if (snap.environment?.lighting?.level) {
+          pills.push(`light: ${snap.environment.lighting.level}`);
+        }
+        if (snap.people?.count_estimate !== undefined) {
+          pills.push(`people: ${snap.people.count_estimate}`);
+        }
+        if (snap.social_cues?.interaction_context?.label) {
+          pills.push(`context: ${snap.social_cues.interaction_context.label}`);
+        }
+        if (snap.environment?.objects?.length) {
+          pills.push(`objects: ${snap.environment.objects.slice(0, 4).join(', ')}`);
+        }
+        renderPills(pills);
+        summaryMeta.textContent = `Updated: ${new Date(snap.ts_ms || Date.now()).toLocaleTimeString()}`;
+        visionJson.textContent = JSON.stringify(snap, null, 2);
       } catch (err) {}
     }
     setInterval(pollVision, 1000);
