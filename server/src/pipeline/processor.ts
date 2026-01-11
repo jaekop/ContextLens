@@ -75,7 +75,10 @@ export class SessionProcessor {
 
     chunk.receivedAt = Date.now();
     session.chunks.push(chunk);
-    session.buffer += `${chunk.speaker ? `[${chunk.speaker}] ` : ''}${chunk.text}\n`;
+    const line = `${chunk.speaker ? `[${chunk.speaker}] ` : ''}${chunk.text}`;
+    session.buffer += `${line}\n`;
+    session.display.transcript_tail = pushTail(session.display.transcript_tail, line);
+    session.display.updatedAt = Date.now();
 
     const now = Date.now();
     const charDelta = session.buffer.length - session.lastSummaryChars;
@@ -94,6 +97,7 @@ export class SessionProcessor {
       topic_line: summary.topic_line,
       intent_tags: summary.intent_tags,
       confidence: clamp(summary.confidence, 0, 1),
+      cards: summary.cards,
       uncertainty_notes: summary.uncertainty_notes,
       last_updated_ms: now
     };
@@ -101,6 +105,12 @@ export class SessionProcessor {
     session.overlays.push(overlay);
     session.lastSummaryAt = now;
     session.lastSummaryChars = session.buffer.length;
+    session.display.topic_line = overlay.topic_line;
+    session.display.intent_tags = overlay.intent_tags;
+    session.display.confidence = overlay.confidence;
+    session.display.cards = summary.cards;
+    session.display.uncertainty_notes = overlay.uncertainty_notes;
+    session.display.updatedAt = now;
 
     if (chunk.receivedAt) {
       session.overlayLatenciesMs.push(now - chunk.receivedAt);
@@ -149,6 +159,8 @@ export class SessionProcessor {
     };
 
     session.visionUpdates.push(update);
+    session.display.env = { label: summary.scene_summary, confidence: update.confidence };
+    session.display.updatedAt = now;
     this.emitters.vision(update);
   }
 
@@ -298,4 +310,9 @@ function percentile(values: number[], p: number): number {
 
 function hashSessionId(sessionId: string): string {
   return crypto.createHash('sha256').update(sessionId).digest('hex');
+}
+
+function pushTail(tail: string[], line: string): string[] {
+  const next = [...tail, line].filter((item) => item.trim().length > 0);
+  return next.slice(-4);
 }

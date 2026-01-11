@@ -70,6 +70,15 @@ export const OverlayUpdateSchema = z.object({
   topic_line: z.string().min(1),
   intent_tags: z.array(z.enum(IntentTags)).min(1).max(3),
   confidence: z.number().min(0).max(1),
+  cards: z
+    .array(
+      z.object({
+        title: z.string().min(1),
+        body: z.string().min(1)
+      })
+    )
+    .max(2)
+    .optional(),
   uncertainty_notes: z.array(z.string().min(1)).max(2),
   last_updated_ms: z.number().nonnegative()
 });

@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Vision Capture</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 16px; }
+    video { width: 240px; height: 180px; background: #111; }
+    .status { margin-top: 8px; font-size: 12px; color: #555; }
+  </style>
+</head>
+<body>
+  <h1>Vision Capture</h1>
+  <video id="video" autoplay muted playsinline></video>
+  <div class="status" id="status">Waiting for camera permission...</div>
+  <script>
+    const statusEl = document.getElementById('status');
+    const video = document.getElementById('video');
+    let streamReady = false;
+
+    async function init() {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+        video.srcObject = stream;
+        await new Promise((resolve) => {
+          video.onloadedmetadata = () => resolve();
+        });
+        streamReady = true;
+        statusEl.textContent = 'Camera ready.';
+      } catch (err) {
+        statusEl.textContent = 'Camera permission denied or unavailable.';
+      }
+    }
+
+    async function captureAndSend() {
+      if (!streamReady) {
+        statusEl.textContent = 'Camera not ready.';
+        return false;
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = video.videoWidth || 320;
+      canvas.height = video.videoHeight || 240;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.8));
+      if (!blob) return false;
+      const buffer = await blob.arrayBuffer();
+      const bytes = new Uint8Array(buffer);
+      let binary = '';
+      for (let i = 0; i < bytes.length; i++) {
+        binary += String.fromCharCode(bytes[i]);
+      }
+      const image_base64 = btoa(binary);
+      await fetch('/frame', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ image_base64, mime: 'image/jpeg' })
+      });
+      statusEl.textContent = 'Frame sent at ' + new Date().toLocaleTimeString();
+      return true;
+    }
+
+    window.captureAndSend = captureAndSend;
+    init();
+  </script>
+</body>
+</html>

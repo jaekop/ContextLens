@@ -70,6 +70,77 @@ async function boot() {
     }
   }, async () => ({ ok: true, sessions: store.list().length }));
 
+  fastify.get('/display.json', {
+    schema: {
+      description: 'Latest display state for dashboard',
+      querystring: {
+        type: 'object',
+        properties: { sessionId: { type: 'string' } }
+      },
+      response: {
+        200: {
+          type: 'object',
+          properties: {
+            sessionId: { type: 'string' },
+            updatedAt: { type: 'number' },
+            topic_line: { type: 'string' },
+            intent_tags: { type: 'array', items: { type: 'string' } },
+            confidence: { type: 'number' },
+            cards: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  title: { type: 'string' },
+                  body: { type: 'string' }
+                }
+              }
+            },
+            uncertainty_notes: { type: 'array', items: { type: 'string' } },
+            transcript_tail: { type: 'array', items: { type: 'string' } },
+            env: {
+              type: 'object',
+              properties: {
+                label: { type: 'string' },
+                confidence: { type: 'number' }
+              }
+            }
+          }
+        }
+      }
+    }
+  }, async (request) => {
+    const sessionId = (request.query as { sessionId?: string })?.sessionId;
+    const display = store.getDisplay(sessionId);
+    if (display) {
+      return display;
+    }
+    return {
+      sessionId: 'none',
+      updatedAt: Date.now(),
+      topic_line: 'No active session',
+      intent_tags: ['smalltalk'],
+      confidence: 0,
+      cards: [
+        { title: 'What is happening', body: 'Waiting for a session.' },
+        { title: 'Try next', body: 'Start a session to see updates.' }
+      ],
+      uncertainty_notes: ['No live session.'],
+      transcript_tail: []
+    };
+  });
+
+  fastify.get('/', {
+    schema: {
+      description: 'Dashboard view',
+      response: {
+        200: { type: 'string' }
+      }
+    }
+  }, async (_, reply) => {
+    reply.type('text/html').send(buildDashboardPage());
+  });
+
   fastify.get('/integrations/test', {
     schema: {
       description: 'Test external integrations (keys or live calls)',
@@ -270,6 +341,102 @@ function buildWsTestPage(wsPath: string): string {
       const sessionId = sessionInput.value || 'demo-session';
       ws.send(JSON.stringify({ type: 'end_session', sessionId }));
     };
+  </script>
+</body>
+</html>`;
+}
+
+function buildDashboardPage(): string {
+  return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Context Lens Dashboard</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 28px; background: #f6f8fb; color: #111; }
+    .container { max-width: 980px; margin: 0 auto; }
+    .header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+    .topic { font-size: 34px; font-weight: 700; margin: 12px 0; }
+    .chips { display: flex; gap: 8px; flex-wrap: wrap; }
+    .chip { background: #111; color: #fff; padding: 6px 10px; border-radius: 999px; font-size: 12px; }
+    .bar { height: 10px; background: #e5e7eb; border-radius: 999px; overflow: hidden; }
+    .bar > div { height: 100%; background: #10b981; width: 0%; transition: width 0.4s ease; }
+    .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin-top: 16px; }
+    .card { background: #fff; padding: 16px; border-radius: 12px; box-shadow: 0 6px 18px rgba(15, 23, 42, 0.08); }
+    .card h3 { margin: 0 0 8px; font-size: 16px; }
+    .meta { margin-top: 14px; display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .panel { background: #fff; padding: 14px; border-radius: 12px; box-shadow: 0 6px 18px rgba(15, 23, 42, 0.08); }
+    .transcript { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 13px; white-space: pre-line; }
+    .env { font-size: 13px; }
+    .muted { color: #6b7280; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>Context Lens</h1>
+      <div class="muted" id="updated">--</div>
+    </div>
+    <div class="topic" id="topic">Waiting for session...</div>
+    <div class="chips" id="chips"></div>
+    <div class="bar"><div id="confidence"></div></div>
+    <div class="cards" id="cards"></div>
+    <div class="meta">
+      <div class="panel">
+        <div class="muted">Transcript tail</div>
+        <div class="transcript" id="transcript"></div>
+      </div>
+      <div class="panel">
+        <div class="muted">Environment snapshot</div>
+        <div class="env" id="env">No vision data.</div>
+      </div>
+    </div>
+    <div class="panel" style="margin-top: 16px;">
+      <div class="muted">Uncertainty notes</div>
+      <div id="uncertainty"></div>
+    </div>
+  </div>
+  <script>
+    const render = (data) => {
+      document.getElementById('topic').textContent = data.topic_line || '—';
+      document.getElementById('updated').textContent = 'Updated ' + new Date(data.updatedAt || Date.now()).toLocaleTimeString();
+      const chips = document.getElementById('chips');
+      chips.innerHTML = '';
+      (data.intent_tags || []).forEach(tag => {
+        const el = document.createElement('span');
+        el.className = 'chip';
+        el.textContent = tag;
+        chips.appendChild(el);
+      });
+      const bar = document.getElementById('confidence');
+      bar.style.width = Math.round((data.confidence || 0) * 100) + '%';
+      const cards = document.getElementById('cards');
+      cards.innerHTML = '';
+      (data.cards || []).slice(0,2).forEach(card => {
+        const el = document.createElement('div');
+        el.className = 'card';
+        el.innerHTML = '<h3>' + card.title + '</h3><div>' + card.body + '</div>';
+        cards.appendChild(el);
+      });
+      document.getElementById('transcript').textContent = (data.transcript_tail || []).join('\\n');
+      const env = document.getElementById('env');
+      if (data.env && data.env.label) {
+        env.textContent = data.env.label + ' (' + Math.round((data.env.confidence || 0) * 100) + '%)';
+      } else {
+        env.textContent = 'No vision data.';
+      }
+      document.getElementById('uncertainty').textContent = (data.uncertainty_notes || []).join(' • ') || '—';
+    };
+    const poll = async () => {
+      try {
+        const res = await fetch('/display.json');
+        const data = await res.json();
+        render(data);
+      } catch (err) {}
+    };
+    poll();
+    setInterval(poll, 800);
   </script>
 </body>
 </html>`;

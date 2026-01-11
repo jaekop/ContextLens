@@ -4,7 +4,7 @@ const envSchema = z.object({
   PORT: z.coerce.number().default(8080),
   WS_PATH: z.string().default('/ws'),
   GEMINI_API_KEY: z.string().optional().default(''),
-  GEMINI_MODEL: z.string().default('gemini-1.5-pro'),
+  GEMINI_MODEL: z.string().default('gemini-1.5-flash'),
   DEEPGRAM_API_KEY: z.string().optional().default(''),
   MONGO_URI: z.string().optional().default(''),
   SNOWFLAKE_ACCOUNT: z.string().optional().default(''),

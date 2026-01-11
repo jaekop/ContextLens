@@ -11,6 +11,7 @@ export type RollingSummary = {
   topic_line: string;
   intent_tags: IntentTag[];
   confidence: number;
+  cards: { title: string; body: string }[];
   uncertainty_notes: string[];
 };
 
@@ -30,6 +31,15 @@ const RollingSchema = z.object({
   topic_line: z.string().min(1),
   intent_tags: z.array(z.enum(IntentTags)).min(1).max(3),
   confidence: z.number().min(0).max(1),
+  cards: z
+    .array(
+      z.object({
+        title: z.string().min(1),
+        body: z.string().min(1)
+      })
+    )
+    .min(1)
+    .max(2),
   uncertainty_notes: z.array(z.string().min(1)).max(2)
 });
 
@@ -155,9 +165,10 @@ function buildRollingPrompt(transcript: string, language?: string): string {
   return [
     'You are Context Lens. Return STRICT JSON only. No markdown or code fences.',
     'Output schema:',
-    '{"topic_line":"<= 12 words","intent_tags":["planning"],"confidence":0.0,"uncertainty_notes":["..."]}',
+    '{"topic_line":"<= 12 words","intent_tags":["planning"],"confidence":0.0,"cards":[{"title":"What is happening","body":"..."},{"title":"Try next","body":"..."}],"uncertainty_notes":["..."]}',
     'Rules:',
     '- intent_tags must be 1-3 tags from: ' + JSON.stringify(IntentTags),
+    '- cards must be 1-2 items with titles: "What is happening" and "Try next".',
     '- No diagnosis, no medical claims.',
     '- Do not assert emotions as facts; use tentative language if needed.',
     '- uncertainty_notes can be 0-2 short notes.',
@@ -221,7 +232,8 @@ function normalizeRolling(summary: RollingSummary): RollingSummary {
   return {
     ...summary,
     topic_line: summary.topic_line.split(/\s+/).slice(0, 12).join(' '),
-    intent_tags: summary.intent_tags.slice(0, 3)
+    intent_tags: summary.intent_tags.slice(0, 3),
+    cards: summary.cards.slice(0, 2)
   };
 }
 
@@ -246,6 +258,10 @@ function heuristicRolling(transcript: string): RollingSummary {
     topic_line,
     intent_tags: tags.slice(0, 3),
     confidence: Number(confidence.toFixed(2)),
+    cards: [
+      { title: 'What is happening', body: topic_line },
+      { title: 'Try next', body: 'Ask for confirmations or next steps.' }
+    ],
     uncertainty_notes
   };
 }
