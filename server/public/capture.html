@@ -88,8 +88,10 @@
         if (!res.ok) return;
         const snap = await res.json();
         const summary = [
-          `env: ${snap.env_label} (${Math.round((snap.env_confidence || 0) * 100)}%)`,
-          snap.objects ? `objects: ${snap.objects.join(', ')}` : '',
+          snap.environment ? `env: ${snap.environment.label} (${Math.round((snap.environment.confidence || 0) * 100)}%)` : '',
+          snap.environment?.objects ? `objects: ${snap.environment.objects.join(', ')}` : '',
+          snap.people ? `people: ${snap.people.count_estimate} (${Math.round((snap.people.count_confidence || 0) * 100)}%)` : '',
+          snap.social_cues?.interaction_context ? `context: ${snap.social_cues.interaction_context.label}` : '',
           snap.notes ? `notes: ${snap.notes.join(' | ')}` : ''
         ].filter(Boolean).join(' | ');
         document.getElementById('vision').textContent = summary || 'No summary.';

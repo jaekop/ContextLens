@@ -63,7 +63,11 @@ export class VisionService extends EventEmitter {
           this.latest = {
             ...this.latest,
             ts_ms: Date.now(),
-            notes: dedupeNotes([...(this.latest.notes ?? []), 'Vision degraded.'])
+            notes: dedupeNotes([...(this.latest.notes ?? []), 'vision_degraded']),
+            reliability: {
+              ...this.latest.reliability,
+              limitations: dedupeNotes([...(this.latest.reliability.limitations ?? []), 'capture_error'])
+            }
           };
           this.updateFramePreview(this.latest);
           this.emit('snapshot', this.latest);
@@ -107,9 +111,50 @@ export class VisionService extends EventEmitter {
     this.mockIndex += 1;
     return {
       ts_ms: Date.now(),
-      env_label,
-      env_confidence,
-      objects: [object],
+      environment: {
+        label: env_label,
+        confidence: env_confidence,
+        objects: [object],
+        lighting: {
+          level: 'normal',
+          source: 'indoor',
+          confidence: 0.6
+        },
+        noise_or_busyness: {
+          level: 'moderate',
+          confidence: 0.5
+        }
+      },
+      people: {
+        count_estimate: this.mockIndex % 2,
+        count_confidence: 0.4,
+        proximity: 'medium',
+        orientation_summary: 'mixed',
+        confidence: 0.4
+      },
+      social_cues: {
+        facial_expression_summary: {
+          label: 'unknown',
+          confidence: 0.2,
+          notes: ['mock_mode']
+        },
+        body_posture_summary: {
+          label: 'unknown',
+          confidence: 0.2
+        },
+        gaze_summary: {
+          label: 'unknown',
+          confidence: 0.2
+        },
+        interaction_context: {
+          label: 'unknown',
+          confidence: 0.2
+        }
+      },
+      reliability: {
+        overall_confidence: 0.4,
+        limitations: ['mock_mode']
+      },
       notes: ['mock_mode']
     };
   }
@@ -130,5 +175,5 @@ function seededConfidence(seed: number): number {
 
 function dedupeNotes(notes: string[]): string[] {
   const set = new Set(notes);
-  return Array.from(set).slice(0, 2);
+  return Array.from(set).slice(0, 3);
 }
