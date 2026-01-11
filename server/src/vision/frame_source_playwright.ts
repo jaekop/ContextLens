@@ -53,11 +53,12 @@ export class PlaywrightFrameSource implements FrameSource {
     if (!this.page) {
       throw new Error('Playwright page not initialized');
     }
+    const framePromise = this.server.waitForFrame(this.timeoutMs);
     const ok = await this.page.evaluate(() => (window as any).captureAndSend());
     if (!ok) {
       throw new Error('capture_not_ready');
     }
-    const frame = await this.server.waitForFrame(this.timeoutMs);
+    const frame = await framePromise;
     return Buffer.from(frame.image_base64, 'base64');
   }
 
